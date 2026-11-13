@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1
+
+FROM node:22-alpine
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY . .
+
+EXPOSE 4010
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget -qO- http://localhost:4010/api/v1/healthz >/dev/null 2>&1 || exit 1
+
+CMD ["npm", "run", "mock:start"]

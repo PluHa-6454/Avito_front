@@ -1,0 +1,981 @@
+openapi: 3.0.3
+info:
+  title: AI-buddy API
+  version: 0.1.0
+  description: |
+    Контракт веб-клиента AI-buddy (Hack&Change 2026). Черновик этапа 0.
+    Источник: TZ-AI-BUDDY-1.0 §10. Бэкенд реализуется после фронтенда по этому контракту.
+    Все данные синтетические.
+  contact:
+    name: AI-buddy frontend team
+servers:
+  - url: /api/v1
+    description: Через nginx/Vite proxy
+tags:
+  - name: Auth
+  - name: Profile
+  - name: Conversations
+  - name: Actions
+  - name: Onboarding
+  - name: Feedback
+  - name: System
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Вход тестовым пользователем
+      security: []
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Токен и профиль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  /me:
+    get:
+      tags: [Profile]
+      summary: Профиль, команда, роль, этап
+      operationId: getMe
+      responses:
+        '200':
+          description: Профиль пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations:
+    get:
+      tags: [Conversations]
+      summary: Список диалогов пользователя
+      operationId: listConversations
+      responses:
+        '200':
+          description: Диалоги
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Conversations]
+      summary: Новый диалог
+      operationId: createConversation
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConversationRequest'
+      responses:
+        '201':
+          description: Созданный диалог
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations/{conversationId}:
+    get:
+      tags: [Conversations]
+      summary: Диалог с метаданными
+      operationId: getConversation
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Диалог
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /conversations/{conversationId}/messages:
+    get:
+      tags: [Conversations]
+      summary: История сообщений
+      operationId: listMessages
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200':
+          description: Сообщения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Conversations]
+      summary: Отправить сообщение; ответ потоком SSE
+      description: |
+        Ответ — `text/event-stream`. События: `status`, `token`, `sources`, `action_draft`,
+        `action_result`, `error`, `done`. Ровно одно терминальное событие: `done` или `error`.
+        `client_message_id` обеспечивает идемпотентность повторной отправки.
+      operationId: sendMessage
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '200':
+          description: Поток SSE
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: '`no-cache`'
+            X-Accel-Buffering:
+              schema:
+                type: string
+              description: '`no` для отключения буферизации nginx'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Поток событий в формате SSE
+              x-sse-events:
+                status:
+                  $ref: '#/components/schemas/SseStatusEvent'
+                token:
+                  $ref: '#/components/schemas/SseTokenEvent'
+                sources:
+                  $ref: '#/components/schemas/SseSourcesEvent'
+                action_draft:
+                  $ref: '#/components/schemas/SseActionDraftEvent'
+                action_result:
+                  $ref: '#/components/schemas/SseActionResultEvent'
+                error:
+                  $ref: '#/components/schemas/SseErrorEvent'
+                done:
+                  $ref: '#/components/schemas/SseDoneEvent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /actions:
+    get:
+      tags: [Actions]
+      summary: Заявки и действия пользователя
+      operationId: listActions
+      responses:
+        '200':
+          description: Действия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /actions/{actionId}:
+    get:
+      tags: [Actions]
+      summary: Статус, результат и история действия
+      operationId: getAction
+      parameters:
+        - $ref: '#/components/parameters/ActionId'
+      responses:
+        '200':
+          description: Действие
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Action'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /actions/{actionId}/confirm:
+    post:
+      tags: [Actions]
+      summary: Подтвердить действие
+      description: |
+        Требуется `Idempotency-Key` (UUID). Повтор с тем же ключом возвращает сохранённый результат.
+        Другой ключ для уже выполненного действия возвращает `409` с результатом.
+      operationId: confirmAction
+      parameters:
+        - $ref: '#/components/parameters/ActionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Результат выполнения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ActionNotAllowed'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/Internal'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /actions/{actionId}/cancel:
+    post:
+      tags: [Actions]
+      summary: Отменить черновик действия
+      operationId: cancelAction
+      parameters:
+        - $ref: '#/components/parameters/ActionId'
+      responses:
+        '200':
+          description: Отменённое действие
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ActionNotAllowed'
+
+  /onboarding:
+    get:
+      tags: [Onboarding]
+      summary: Этапы, шаги, статусы и следующий шаг
+      operationId: getOnboarding
+      responses:
+        '200':
+          description: Онбординг пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Onboarding'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /messages/{messageId}/feedback:
+    post:
+      tags: [Feedback]
+      summary: Оценка ответа
+      operationId: sendFeedback
+      parameters:
+        - $ref: '#/components/parameters/MessageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '200':
+          description: Сохранённая оценка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /healthz:
+    get:
+      tags: [System]
+      summary: Healthcheck
+      security: []
+      operationId: healthz
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /metrics:
+    get:
+      tags: [System]
+      summary: Prometheus-метрики
+      security: []
+      operationId: metrics
+      responses:
+        '200':
+          description: Метрики
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema:
+        type: string
+    ActionId:
+      name: actionId
+      in: path
+      required: true
+      schema:
+        type: string
+    MessageId:
+      name: messageId
+      in: path
+      required: true
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: UUID, уникальный для попытки подтверждения
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: Некорректные данные
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Нет или истёк токен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Нет прав
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Объект не найден или недоступен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Действие уже выполнено; возвращается сохранённый результат
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ConflictResponse'
+    ActionNotAllowed:
+      description: Запрещённый переход или неположенный доступ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    RateLimited:
+      description: Превышен лимит запросов к LLM
+      headers:
+        Retry-After:
+          description: Через сколько секунд повторить
+          schema:
+            type: integer
+            minimum: 0
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Internal:
+      description: Внутренняя ошибка
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: LLM недоступна после повтора
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    ErrorCode:
+      type: string
+      enum:
+        - VALIDATION_ERROR
+        - UNAUTHORIZED
+        - FORBIDDEN
+        - NOT_FOUND
+        - CONFLICT
+        - ACTION_NOT_ALLOWED
+        - RATE_LIMITED
+        - INTERNAL
+        - LLM_UNAVAILABLE
+
+    ErrorDetail:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+        hint:
+          type: string
+          nullable: true
+        request_id:
+          type: string
+          example: req_01J...
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+
+    ConflictResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+        action:
+          $ref: '#/components/schemas/Action'
+
+    Role:
+      type: string
+      enum: [intern, mentor, lead]
+
+    User:
+      type: object
+      required: [id, email, name, role, team_id, team_name]
+      properties:
+        id:
+          type: string
+          example: u_intern_a
+        email:
+          type: string
+          format: email
+          example: intern@test.local
+        name:
+          type: string
+          example: Анна Стажёрова
+        role:
+          $ref: '#/components/schemas/Role'
+        team_id:
+          type: string
+          example: team_a
+        team_name:
+          type: string
+          example: Команда A
+        onboarding_stage:
+          type: string
+          nullable: true
+          example: week_1
+
+    LoginRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          example: intern@test.local
+
+    LoginResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: Синтетический JWT от corp-mock
+        user:
+          $ref: '#/components/schemas/User'
+
+    Conversation:
+      type: object
+      required: [id, title, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          example: conv_01
+        title:
+          type: string
+          example: Вопросы по команде
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ConversationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Conversation'
+
+    CreateConversationRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          maxLength: 200
+          example: Новый диалог
+
+    Source:
+      type: object
+      required: [doc_id, title, synthetic]
+      properties:
+        doc_id:
+          type: string
+          example: kb-014
+        title:
+          type: string
+          example: Код-ревью в команде A
+        synthetic:
+          type: boolean
+          example: true
+
+    MessageRole:
+      type: string
+      enum: [user, assistant]
+
+    MessageStatus:
+      type: string
+      enum: [streaming, done, error]
+
+    FeedbackRating:
+      type: string
+      enum: [up, down]
+
+    Feedback:
+      type: object
+      required: [id, message_id, rating, created_at]
+      properties:
+        id:
+          type: string
+          example: fb_01
+        message_id:
+          type: string
+          example: msg_01
+        rating:
+          $ref: '#/components/schemas/FeedbackRating'
+        comment:
+          type: string
+          nullable: true
+          maxLength: 1000
+        created_at:
+          type: string
+          format: date-time
+
+    Message:
+      type: object
+      required: [id, conversation_id, role, text, status, sources, created_at]
+      properties:
+        id:
+          type: string
+          example: msg_01
+        conversation_id:
+          type: string
+          example: conv_01
+        role:
+          $ref: '#/components/schemas/MessageRole'
+        text:
+          type: string
+        status:
+          $ref: '#/components/schemas/MessageStatus'
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+        created_at:
+          type: string
+          format: date-time
+        feedback:
+          allOf:
+            - $ref: '#/components/schemas/Feedback'
+          nullable: true
+        client_message_id:
+          type: string
+          nullable: true
+          description: Идентификатор клиентской отправки; нужен для дедупликации повторов.
+          example: 7d0e3f6e-2c1b-4a59-9e6f-2f1a4b8c9d01
+
+    MessageList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+
+    SendMessageRequest:
+      type: object
+      required: [text, client_message_id]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          example: Как у нас устроено код-ревью?
+        client_message_id:
+          type: string
+          format: uuid
+          description: Идемпотентный идентификатор отправки (contract proposal)
+
+    ActionType:
+      type: string
+      enum:
+        - absence.create
+        - access.request
+        - tasks.transition
+        - mentor.ask
+
+    ActionStatus:
+      type: string
+      enum: [draft, confirmed, executing, done, failed, cancelled]
+
+    ActionEvent:
+      type: object
+      required: [status, at]
+      properties:
+        status:
+          $ref: '#/components/schemas/ActionStatus'
+        at:
+          type: string
+          format: date-time
+        note:
+          type: string
+          nullable: true
+
+    ActionResult:
+      type: object
+      additionalProperties: true
+      properties:
+        number:
+          type: string
+          example: ABS-1024
+        status:
+          type: string
+          example: pending
+        approver:
+          type: string
+          nullable: true
+          example: Мария Петрова
+        task_id:
+          type: string
+          example: TASK-7
+
+    Action:
+      type: object
+      required: [id, type, status, fields, created_at, updated_at, history]
+      properties:
+        id:
+          type: string
+          example: act_01
+        type:
+          $ref: '#/components/schemas/ActionType'
+        status:
+          $ref: '#/components/schemas/ActionStatus'
+        fields:
+          type: object
+          additionalProperties: true
+          example:
+            date: '2026-11-20'
+            reason: Личные дела
+        result:
+          allOf:
+            - $ref: '#/components/schemas/ActionResult'
+          nullable: true
+        error:
+          allOf:
+            - $ref: '#/components/schemas/ErrorDetail'
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionEvent'
+
+    ActionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+
+    ActionResponse:
+      type: object
+      required: [action]
+      properties:
+        action:
+          $ref: '#/components/schemas/Action'
+
+    StepStatus:
+      type: string
+      enum: [done, in_progress, pending]
+
+    OnboardingStep:
+      type: object
+      required: [code, title, status, order]
+      properties:
+        code:
+          type: string
+          example: get_access
+        title:
+          type: string
+          example: Получить доступы
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/StepStatus'
+        order:
+          type: integer
+          minimum: 1
+        action_type:
+          allOf:
+            - $ref: '#/components/schemas/ActionType'
+          nullable: true
+
+    OnboardingStage:
+      type: object
+      required: [code, title, order, steps]
+      properties:
+        code:
+          type: string
+          example: day_1
+        title:
+          type: string
+          example: День 1
+        order:
+          type: integer
+          minimum: 1
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/OnboardingStep'
+
+    NextStep:
+      type: object
+      required: [stage_code, step_code, title]
+      properties:
+        stage_code:
+          type: string
+          example: day_1
+        step_code:
+          type: string
+          example: get_access
+        title:
+          type: string
+          example: Получить доступы
+        prompt:
+          type: string
+          nullable: true
+          example: Какие доступы мне нужны?
+
+    OnboardingProgress:
+      type: object
+      required: [completed, total, percent]
+      properties:
+        completed:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+
+    Onboarding:
+      type: object
+      required: [stages, next_step, progress]
+      properties:
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/OnboardingStage'
+        next_step:
+          allOf:
+            - $ref: '#/components/schemas/NextStep'
+          nullable: true
+        progress:
+          $ref: '#/components/schemas/OnboardingProgress'
+
+    FeedbackRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating:
+          $ref: '#/components/schemas/FeedbackRating'
+        comment:
+          type: string
+          nullable: true
+          maxLength: 1000
+
+    FeedbackResponse:
+      type: object
+      required: [feedback]
+      properties:
+        feedback:
+          $ref: '#/components/schemas/Feedback'
+
+    SseStatusEvent:
+      type: object
+      required: [stage, text]
+      properties:
+        stage:
+          type: string
+          example: kb_search
+        text:
+          type: string
+          example: ищу в базе знаний
+
+    SseTokenEvent:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          example: 'Код-ревью проходит в два этапа: '
+
+    SseSourcesEvent:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Source'
+
+    SseActionDraftEvent:
+      type: object
+      required: [action_id, type, fields]
+      properties:
+        action_id:
+          type: string
+          example: act_01
+        type:
+          $ref: '#/components/schemas/ActionType'
+        fields:
+          type: object
+          additionalProperties: true
+
+    SseActionResultEvent:
+      type: object
+      required: [action_id, status]
+      properties:
+        action_id:
+          type: string
+          example: act_01
+        status:
+          $ref: '#/components/schemas/ActionStatus'
+        result:
+          allOf:
+            - $ref: '#/components/schemas/ActionResult'
+          nullable: true
+
+    SseErrorEvent:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+
+    SseDoneEvent:
+      type: object
+      required: [message_id]
+      properties:
+        message_id:
+          type: string
+          example: msg_01

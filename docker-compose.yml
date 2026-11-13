@@ -1,0 +1,33 @@
+services:
+  mock-api:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.mock
+    environment:
+      MOCK_PORT: 4010
+    ports:
+      - '${MOCK_PORT:-4010}:4010'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:4010/api/v1/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    depends_on:
+      mock-api:
+        condition: service_healthy
+    ports:
+      - '${WEB_PORT:-8080}:80'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost/']
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
